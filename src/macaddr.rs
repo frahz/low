@@ -1,6 +1,6 @@
-use std::{num,result};
-use thiserror::Error;
 use nix::ifaddrs::*;
+use std::{num, result};
+use thiserror::Error;
 
 #[derive(Debug)]
 pub struct MacAddress {
@@ -12,11 +12,14 @@ pub enum MacAddressError {
     #[error("Invalid Mac Address length: {0}")]
     InvalidLength(usize),
 
-    #[error("Couldn't parse Mac Address")]
-    ParseError(#[from] num::ParseIntError),
+    #[error("Couldn't parse Mac Address: {mac_address}")]
+    ParseError {
+        mac_address: String,
+        cause: num::ParseIntError,
+    },
 
     #[error("Couldn't get interface addresses")]
-    Errno(#[from] nix::errno::Errno)
+    Errno(#[from] nix::errno::Errno),
 }
 
 type Result<T> = result::Result<T, MacAddressError>;
@@ -34,7 +37,12 @@ impl MacAddress {
             let offset = 2 * idx;
             *byte = match u8::from_str_radix(&mac[offset..offset + 2], 16) {
                 Ok(x) => x,
-                Err(e) => return Err(MacAddressError::ParseError(e)),
+                Err(e) => {
+                    return Err(MacAddressError::ParseError {
+                        mac_address: address.to_string(),
+                        cause: e,
+                    })
+                }
             }
         }
 
