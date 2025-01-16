@@ -1,3 +1,5 @@
+use std::{num,result};
+use thiserror::Error;
 use nix::ifaddrs::*;
 
 #[derive(Debug)]
@@ -5,31 +7,42 @@ pub struct MacAddress {
     pub bytes: [u8; 6],
 }
 
+#[derive(Error, Debug)]
+pub enum MacAddressError {
+    #[error("Invalid Mac Address length: {0}")]
+    InvalidLength(usize),
+
+    #[error("Couldn't parse Mac Address")]
+    ParseError(#[from] num::ParseIntError),
+
+    #[error("Couldn't get interface addresses")]
+    Errno(#[from] nix::errno::Errno)
+}
+
+type Result<T> = result::Result<T, MacAddressError>;
+
 impl MacAddress {
-    pub fn parse(address: &str) -> Result<Self, String> {
+    pub fn parse(address: &str) -> Result<Self> {
         let mac = address.replace(&[':', '.', '-'], "");
         let mut mac_bytes = [0; 6];
 
         if mac.len() != 12 {
-            return Err(format!(
-                "Incorrect length provided for Mac Address len: {}",
-                mac.len()
-            ));
+            return Err(MacAddressError::InvalidLength(mac.len()));
         }
 
         for (idx, byte) in mac_bytes.iter_mut().enumerate() {
             let offset = 2 * idx;
             *byte = match u8::from_str_radix(&mac[offset..offset + 2], 16) {
                 Ok(x) => x,
-                Err(_) => return Err("Couldn't parse Mac Address".to_string()),
+                Err(e) => return Err(MacAddressError::ParseError(e)),
             }
         }
 
         Ok(Self { bytes: mac_bytes })
     }
 
-    pub fn get(ifname: &str) -> Result<Self, String> {
-        let iflist = getifaddrs().unwrap();
+    pub fn get(ifname: &str) -> Result<Self> {
+        let iflist = getifaddrs()?;
 
         for interface in iflist {
             if let Some(address) = interface.address {
